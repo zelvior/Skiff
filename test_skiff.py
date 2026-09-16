@@ -79,6 +79,21 @@ class TestSkiff(unittest.TestCase):
         res_read = skiff.tool_read_file({"path": test_file})
         self.assertEqual(res_read["content"], "world")
 
+    def test_file_info_and_search_tools(self):
+        test_file = os.path.join(self.temp_dir, "search_me.py")
+        with open(test_file, "w") as f:
+            f.write("def foo():\n    return 'skiff_agent'\n")
+
+        info_res = skiff.tool_file_info({"path": test_file})
+        self.assertTrue(info_res["ok"])
+        self.assertFalse(info_res["is_dir"])
+        self.assertGreater(info_res["size_bytes"], 0)
+
+        search_res = skiff.tool_search_files({"path": self.temp_dir, "pattern": "skiff_agent"})
+        self.assertTrue(search_res["ok"])
+        self.assertEqual(search_res["match_count"], 1)
+        self.assertEqual(search_res["matches"][0]["line"], 2)
+
     def test_config_load_save(self):
         cfg = skiff.load_config()
         self.assertEqual(cfg["provider"], "openai")

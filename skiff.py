@@ -136,15 +136,30 @@ def print_banner(breadcrumb=""):
         hr(w)
 
 
+def _get_git_branch():
+    try:
+        proc = subprocess.Popen(["git", "rev-parse", "--abbrev-ref", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, _ = proc.communicate()
+        if proc.returncode == 0:
+            return (out.decode("utf-8") if not PY2 and isinstance(out, bytes) else out).strip()
+    except Exception:
+        pass
+    return ""
+
+
 def print_status(cfg):
     provider = cfg.get("provider", "-")
     model = cfg.get("model", "-") or "-"
     key = cfg.get("api_key", "")
     key_disp = (key[:4] + "..." + key[-4:]) if len(key) > 8 else ("set" if key else C_RED + "not set" + C_RESET)
+    cwd = os.path.basename(os.getcwd()) or os.getcwd()
+    branch = _get_git_branch()
+    git_disp = (C_DIM + "  |  git " + C_RESET + C_CYAN + branch + C_RESET) if branch else ""
     w = safe_width()
     print(C_DIM + " provider " + C_RESET + C_GREEN + provider + C_RESET +
           C_DIM + "  |  model " + C_RESET + C_GREEN + model + C_RESET +
-          C_DIM + "  |  key " + C_RESET + C_GREEN + key_disp + C_RESET)
+          C_DIM + "  |  key " + C_RESET + C_GREEN + key_disp + C_RESET +
+          C_DIM + "  |  cwd " + C_RESET + C_YELLOW + cwd + C_RESET + git_disp)
     hr(w)
 
 
@@ -245,9 +260,9 @@ COST_TABLE = {
 
 SYSTEM_PROMPT_BASE = (
     "You are Skiff, an autonomous AI coding agent running in a local CLI. "
-    "You have tools to read/write/list/delete files, execute shell commands, "
-    "inspect code structure, map repositories, run git diffs, run tests, and "
-    "call MCP tools if configured. Use tools by responding with a single JSON "
+    "You have tools to read/write/list/delete files, inspect file metadata, search files, "
+    "execute shell commands, inspect code structure, map repositories, run git diffs, run tests, "
+    "and call MCP tools if configured. Use tools by responding with a single JSON "
     "object and nothing else, in this exact format:\n"
     '{"tool": "<tool_name>", "args": {...}}\n'
     "Available tools:\n"
@@ -256,6 +271,8 @@ SYSTEM_PROMPT_BASE = (
     "  append_file(path, content)\n"
     "  patch_file(path, old_str, new_str)  - exact-match replace, for surgical edits\n"
     "  list_dir(path)\n"
+    "  file_info(path)  - detailed metadata: size, permissions, modified time\n"
+    "  search_files(path, pattern)  - regex code search across files in a path\n"
     "  delete_path(path)\n"
     "  make_dir(path)\n"
     "  run_command(cmd)\n"
@@ -607,6 +624,64 @@ def tool_delete_path(args):
     return {"ok": True, "message": "Deleted %s" % path}
 
 
+def tool_file_info(args):
+    path = _safe_path(args.get("path", ""))
+    if not os.path.exists(path):
+        return {"ok": False, "error": "Path not found: %s" % path}
+    st = os.stat(path)
+    return {
+        "ok": True,
+        "path": path,
+        "is_dir": os.path.isdir(path),
+        "size_bytes": st.st_size,
+        "mode": oct(st.st_mode),
+        "mtime": time.ctime(st.st_mtime)
+    }
+
+
+def tool_search_files(args):
+    root = _safe_path(args.get("path", "."))
+    pattern = args.get("pattern", "")
+    if not pattern:
+        return {"ok": False, "error": "Empty pattern"}
+    try:
+        regex = re.compile(pattern)
+    except Exception as e:
+        return {"ok": False, "error": "Invalid regex pattern: %s" % str(e)}
+
+    patterns = _load_skiffignore(root)
+    matches = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
+        rel = os.path.relpath(dirpath, root)
+        for fn in filenames:
+            relfull = os.path.normpath(os.path.join(rel, fn))
+            if _is_ignored(relfull, patterns):
+                continue
+            full = os.path.join(dirpath, fn)
+            try:
+                f = open(full, "r")
+                try:
+                    for line_num, line in enumerate(f, 1):
+                        if regex.search(line):
+                            matches.append({
+                                "file": relfull,
+                                "line": line_num,
+                                "text": line.strip()[:200]
+                            })
+                            if len(matches) >= 500:
+                                break
+                finally:
+                    f.close()
+            except Exception:
+                pass
+            if len(matches) >= 500:
+                break
+        if len(matches) >= 500:
+            break
+    return {"ok": True, "match_count": len(matches), "matches": matches}
+
+
 def tool_make_dir(args):
     path = _safe_path(args.get("path", ""))
     if not os.path.isdir(path):
@@ -804,6 +879,8 @@ TOOLS = {
     "append_file": tool_append_file,
     "patch_file": tool_patch_file,
     "list_dir": tool_list_dir,
+    "file_info": tool_file_info,
+    "search_files": tool_search_files,
     "delete_path": tool_delete_path,
     "make_dir": tool_make_dir,
     "run_command": tool_run_command,
@@ -1229,17 +1306,53 @@ def tui_chat_session(cfg):
     clear_screen()
     print_banner("Chat session")
     print_status(cfg)
-    print(" Type your task in plain English. Type 'menu' to go back, 'exit' to quit Skiff.\n")
+    print(" Type your task in plain English.")
+    print(C_DIM + " Slash commands: /clear, /history, /config, /help, /plan, /menu, /exit" + C_RESET + "\n")
     turn = 0
     while True:
         task = prompt_input(" you> ")
         if task is None:
             return "exit"
         low = task.strip().lower()
-        if low == "menu":
+        if low in ("menu", "/menu"):
             return "menu"
-        if low in ("exit", "quit"):
+        if low in ("exit", "quit", "/exit"):
             return "exit"
+        if low == "/clear":
+            clear_screen()
+            print_banner("Chat session")
+            print_status(cfg)
+            continue
+        if low == "/history":
+            cmd_history()
+            continue
+        if low == "/config":
+            cmd_config()
+            continue
+        if low == "/help":
+            print(C_CYAN + "Available slash commands:" + C_RESET)
+            print("  /clear   - Clear terminal screen")
+            print("  /history - View session history")
+            print("  /config  - View active configuration")
+            print("  /plan    - View last recorded plan")
+            print("  /menu    - Return to main TUI menu")
+            print("  /exit    - Exit Skiff")
+            continue
+        if low == "/plan":
+            path = os.path.join(CONFIG_DIR, "last_plan.json")
+            if os.path.isfile(path):
+                f = open(path, "r")
+                try:
+                    data = json.load(f)
+                    print(C_GREEN + "Last recorded plan:" + C_RESET)
+                    for idx, step in enumerate(data.get("steps", [])):
+                        print("  %d. %s" % (idx + 1, step))
+                finally:
+                    f.close()
+            else:
+                print(C_DIM + "No plan recorded yet." + C_RESET)
+            continue
+
         if not task.strip():
             continue
         turn += 1
