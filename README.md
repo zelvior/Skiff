@@ -9,7 +9,7 @@
 
 # Skiff - BYOK AI Coding Agent CLI
 
-**A high-performance BYOK AI coding agent CLI built to run everywhere — from Windows XP 32-bit to Windows 11 64-bit, as well as Linux and macOS — as a single dependency-free Python file.**
+**A high-performance BYOK AI coding agent CLI built to run everywhere — from Windows XP 32-bit to Windows 11 64-bit, as well as Linux, macOS, and Android (Termux) — as a single dependency-free Python file.**
 
 Version 1.0.0
 
@@ -51,6 +51,7 @@ Skiff was created to deliver an autonomous AI coding experience across all deskt
 | Windows 10 / 11 / Windows Terminal | 32-bit / 64-bit / ARM64 | 3.6 - 3.12+ | Full ANSI Color & Boxes | Fully Supported |
 | Linux (Ubuntu, Debian, Fedora, Arch, RHEL) | x86, x86_64, ARM64 | 2.7.x / 3.x | Full ANSI Color & Boxes | Fully Supported |
 | macOS (Intel & Apple Silicon) | x86_64, arm64 | 2.7.x / 3.x | Full ANSI Color & Boxes | Fully Supported |
+| Android (Termux) | ARM, ARM64, x86_64 | 3.x | Full ANSI Color & Boxes | Fully Supported |
 
 ---
 
@@ -77,6 +78,15 @@ git clone https://github.com/zelvior/Skiff.git
 cd Skiff
 
 # Run directly
+python skiff.py
+```
+
+### Termux (Android Terminal)
+On Android via Termux, install Python and Git using `pkg`:
+```bash
+pkg update && pkg install python git -y
+git clone https://github.com/zelvior/Skiff.git
+cd Skiff
 python skiff.py
 ```
 

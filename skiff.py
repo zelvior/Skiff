@@ -31,6 +31,7 @@ else:
     text_type = str
 
 IS_WIN = sys.platform.startswith("win")
+IS_TERMUX = "TERMUX_VERSION" in os.environ or os.path.exists("/data/data/com.termux")
 
 
 def _supports_ansi():
@@ -886,6 +887,7 @@ def tool_platform_info(args):
         "os": sys.platform,
         "python_version": sys.version,
         "is_win": IS_WIN,
+        "is_termux": IS_TERMUX,
         "windows_version": str(ver) if ver else None,
         "ansi_supported": ANSI,
         "cwd": os.getcwd()
