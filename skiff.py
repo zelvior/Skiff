@@ -122,12 +122,23 @@ def box_line(text, width=None, color="", center=False):
     print("%s %s%s%s %s" % (BOX["v"], color, inner, C_RESET if color else "", BOX["v"]))
 
 
+ASCII_LOGO = [
+    r"███████╗ ██╗  ██╗ ██╗ ███████╗ ███████╗",
+    r"██╔════╝ ██║ ██╔╝ ██║ ██╔════╝ ██╔════╝",
+    r"███████╗ █████╔╝  ██║ █████╗   █████╗  ",
+    r"╚════██║ ██╔═██╗  ██║ ██╔══╝   ██╔══╝  ",
+    r"███████║ ██║  ██╗ ██║ ██║      ██║     ",
+    r"╚══════╝ ╚═╝  ╚═╝ ╚═╝ ╚═╝      ╚═╝     "
+]
+
+
 def print_banner(breadcrumb=""):
     w = safe_width(60)
     clear_screen()
     print(C_CYAN + C_BOLD)
     box_top(w)
-    box_line("S K I F F", w, center=True)
+    for line in ASCII_LOGO:
+        box_line(line, w, center=True)
     box_line("BYOK AI Coding Agent", w, center=True)
     box_bottom(w)
     print(C_RESET)
@@ -136,15 +147,30 @@ def print_banner(breadcrumb=""):
         hr(w)
 
 
+def _get_git_branch():
+    try:
+        proc = subprocess.Popen(["git", "rev-parse", "--abbrev-ref", "HEAD"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        out, _ = proc.communicate()
+        if proc.returncode == 0:
+            return (out.decode("utf-8") if not PY2 and isinstance(out, bytes) else out).strip()
+    except Exception:
+        pass
+    return ""
+
+
 def print_status(cfg):
     provider = cfg.get("provider", "-")
     model = cfg.get("model", "-") or "-"
     key = cfg.get("api_key", "")
     key_disp = (key[:4] + "..." + key[-4:]) if len(key) > 8 else ("set" if key else C_RED + "not set" + C_RESET)
+    cwd = os.path.basename(os.getcwd()) or os.getcwd()
+    branch = _get_git_branch()
+    git_disp = (C_DIM + "  |  git " + C_RESET + C_CYAN + branch + C_RESET) if branch else ""
     w = safe_width()
     print(C_DIM + " provider " + C_RESET + C_GREEN + provider + C_RESET +
           C_DIM + "  |  model " + C_RESET + C_GREEN + model + C_RESET +
-          C_DIM + "  |  key " + C_RESET + C_GREEN + key_disp + C_RESET)
+          C_DIM + "  |  key " + C_RESET + C_GREEN + key_disp + C_RESET +
+          C_DIM + "  |  cwd " + C_RESET + C_YELLOW + cwd + C_RESET + git_disp)
     hr(w)
 
 
@@ -245,9 +271,9 @@ COST_TABLE = {
 
 SYSTEM_PROMPT_BASE = (
     "You are Skiff, an autonomous AI coding agent running in a local CLI. "
-    "You have tools to read/write/list/delete files, execute shell commands, "
-    "inspect code structure, map repositories, run git diffs, run tests, and "
-    "call MCP tools if configured. Use tools by responding with a single JSON "
+    "You have tools to read/write/list/delete files, inspect file metadata, search files, find files, "
+    "execute shell commands, inspect code structure, map repositories, run git commands (diff/status/commit/log), "
+    "get platform info, run tests, and call MCP tools if configured. Use tools by responding with a single JSON "
     "object and nothing else, in this exact format:\n"
     '{"tool": "<tool_name>", "args": {...}}\n'
     "Available tools:\n"
@@ -256,6 +282,9 @@ SYSTEM_PROMPT_BASE = (
     "  append_file(path, content)\n"
     "  patch_file(path, old_str, new_str)  - exact-match replace, for surgical edits\n"
     "  list_dir(path)\n"
+    "  find_files(path, glob_pattern)  - find files matching wildcard pattern\n"
+    "  file_info(path)  - detailed metadata: size, permissions, modified time\n"
+    "  search_files(path, pattern)  - regex code search across files in a path\n"
     "  delete_path(path)\n"
     "  make_dir(path)\n"
     "  run_command(cmd)\n"
@@ -263,6 +292,9 @@ SYSTEM_PROMPT_BASE = (
     "  map_repo(path)  - directory tree + per-file code index, for repo-wide context\n"
     "  git_diff()  - current working tree diff\n"
     "  git_status()\n"
+    "  git_commit(message)  - stage and commit current changes with message\n"
+    "  git_log(max_count)  - view recent git commits\n"
+    "  platform_info()  - OS, Python version, environment diagnostics\n"
     "  run_tests(cmd)  - run a test command, capture output for self-healing loops\n"
     "  mcp_call(server, method, params)  - call a configured MCP server\n"
     "  plan(steps)  - record a multi-step plan (list of strings) before executing\n"
@@ -542,7 +574,8 @@ def _backup_before_overwrite(path):
     if not os.path.isdir(backup_dir):
         os.makedirs(backup_dir)
     stamp = str(int(time.time() * 1000))
-    name = hashlib.sha1(path.encode("utf-8") if not PY2 else path).hexdigest()[:10]
+    path_bytes = path.encode("utf-8") if isinstance(path, text_type) else str(path).encode("utf-8")
+    name = hashlib.sha1(path_bytes).hexdigest()[:10]
     dest = os.path.join(backup_dir, "%s_%s_%s" % (name, stamp, os.path.basename(path)))
     try:
         shutil.copy2(path, dest)
@@ -604,6 +637,64 @@ def tool_delete_path(args):
     else:
         return {"ok": False, "error": "Path not found: %s" % path}
     return {"ok": True, "message": "Deleted %s" % path}
+
+
+def tool_file_info(args):
+    path = _safe_path(args.get("path", ""))
+    if not os.path.exists(path):
+        return {"ok": False, "error": "Path not found: %s" % path}
+    st = os.stat(path)
+    return {
+        "ok": True,
+        "path": path,
+        "is_dir": os.path.isdir(path),
+        "size_bytes": st.st_size,
+        "mode": oct(st.st_mode),
+        "mtime": time.ctime(st.st_mtime)
+    }
+
+
+def tool_search_files(args):
+    root = _safe_path(args.get("path", "."))
+    pattern = args.get("pattern", "")
+    if not pattern:
+        return {"ok": False, "error": "Empty pattern"}
+    try:
+        regex = re.compile(pattern)
+    except Exception as e:
+        return {"ok": False, "error": "Invalid regex pattern: %s" % str(e)}
+
+    patterns = _load_skiffignore(root)
+    matches = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
+        rel = os.path.relpath(dirpath, root)
+        for fn in filenames:
+            relfull = os.path.normpath(os.path.join(rel, fn))
+            if _is_ignored(relfull, patterns):
+                continue
+            full = os.path.join(dirpath, fn)
+            try:
+                f = open(full, "r")
+                try:
+                    for line_num, line in enumerate(f, 1):
+                        if regex.search(line):
+                            matches.append({
+                                "file": relfull,
+                                "line": line_num,
+                                "text": line.strip()[:200]
+                            })
+                            if len(matches) >= 500:
+                                break
+                finally:
+                    f.close()
+            except Exception:
+                pass
+            if len(matches) >= 500:
+                break
+        if len(matches) >= 500:
+            break
+    return {"ok": True, "match_count": len(matches), "matches": matches}
 
 
 def tool_make_dir(args):
@@ -748,6 +839,59 @@ def tool_git_status(args):
     return tool_run_command({"cmd": "git status --porcelain"})
 
 
+def tool_git_commit(args):
+    msg = args.get("message", "Commit by Skiff AI agent")
+    res_add = tool_run_command({"cmd": "git add -A"})
+    if not res_add.get("ok"):
+        return res_add
+    # Escape quotes cleanly for cross-platform execution
+    safe_msg = msg.replace('"', '\\"')
+    return tool_run_command({"cmd": 'git commit -m "%s"' % safe_msg})
+
+
+def tool_git_log(args):
+    max_count = int(args.get("max_count", 10))
+    return tool_run_command({"cmd": "git log -n %d --oneline" % max_count})
+
+
+def tool_find_files(args):
+    import fnmatch
+    root = _safe_path(args.get("path", "."))
+    pattern = args.get("glob_pattern", "*")
+    if not os.path.isdir(root):
+        return {"ok": False, "error": "Not a directory: %s" % root}
+    patterns = _load_skiffignore(root)
+    matched = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
+        rel = os.path.relpath(dirpath, root)
+        for fn in filenames:
+            relfull = os.path.normpath(os.path.join(rel, fn))
+            if _is_ignored(relfull, patterns):
+                continue
+            if fnmatch.fnmatch(fn, pattern) or fnmatch.fnmatch(relfull, pattern):
+                matched.append(relfull)
+            if len(matched) >= 1000:
+                break
+        if len(matched) >= 1000:
+            break
+    return {"ok": True, "match_count": len(matched), "files": matched}
+
+
+def tool_platform_info(args):
+    import platform
+    ver = sys.getwindowsversion() if hasattr(sys, "getwindowsversion") else None
+    return {
+        "ok": True,
+        "os": sys.platform,
+        "python_version": sys.version,
+        "is_win": IS_WIN,
+        "windows_version": str(ver) if ver else None,
+        "ansi_supported": ANSI,
+        "cwd": os.getcwd()
+    }
+
+
 def tool_run_tests(args):
     cmd = args.get("cmd", "")
     if not cmd:
@@ -803,6 +947,9 @@ TOOLS = {
     "append_file": tool_append_file,
     "patch_file": tool_patch_file,
     "list_dir": tool_list_dir,
+    "find_files": tool_find_files,
+    "file_info": tool_file_info,
+    "search_files": tool_search_files,
     "delete_path": tool_delete_path,
     "make_dir": tool_make_dir,
     "run_command": tool_run_command,
@@ -810,6 +957,9 @@ TOOLS = {
     "map_repo": tool_map_repo,
     "git_diff": tool_git_diff,
     "git_status": tool_git_status,
+    "git_commit": tool_git_commit,
+    "git_log": tool_git_log,
+    "platform_info": tool_platform_info,
     "run_tests": tool_run_tests,
     "mcp_call": tool_mcp_call,
     "plan": tool_plan
@@ -821,14 +971,32 @@ TOOLS = {
 
 def extract_json(text):
     text = text.strip()
-    m = re.search(r"\{.*\}", text, re.DOTALL)
-    if not m:
-        return None
-    chunk = m.group(0)
     try:
-        return json.loads(chunk)
+        obj = json.loads(text)
+        if isinstance(obj, dict):
+            return obj
     except Exception:
-        return None
+        pass
+
+    idx = 0
+    dec = json.JSONDecoder()
+    candidate = None
+    while idx < len(text):
+        start = text.find("{", idx)
+        if start == -1:
+            break
+        try:
+            obj, end = dec.raw_decode(text[start:])
+            if isinstance(obj, dict):
+                if "tool" in obj:
+                    return obj
+                if candidate is None:
+                    candidate = obj
+            idx = start + (end if end > 0 else 1)
+        except Exception:
+            idx = start + 1
+
+    return candidate
 
 
 def load_ambient_context(root="."):
@@ -1210,17 +1378,53 @@ def tui_chat_session(cfg):
     clear_screen()
     print_banner("Chat session")
     print_status(cfg)
-    print(" Type your task in plain English. Type 'menu' to go back, 'exit' to quit Skiff.\n")
+    print(" Type your task in plain English.")
+    print(C_DIM + " Slash commands: /clear, /history, /config, /help, /plan, /menu, /exit" + C_RESET + "\n")
     turn = 0
     while True:
         task = prompt_input(" you> ")
         if task is None:
             return "exit"
         low = task.strip().lower()
-        if low == "menu":
+        if low in ("menu", "/menu"):
             return "menu"
-        if low in ("exit", "quit"):
+        if low in ("exit", "quit", "/exit"):
             return "exit"
+        if low == "/clear":
+            clear_screen()
+            print_banner("Chat session")
+            print_status(cfg)
+            continue
+        if low == "/history":
+            cmd_history()
+            continue
+        if low == "/config":
+            cmd_config()
+            continue
+        if low == "/help":
+            print(C_CYAN + "Available slash commands:" + C_RESET)
+            print("  /clear   - Clear terminal screen")
+            print("  /history - View session history")
+            print("  /config  - View active configuration")
+            print("  /plan    - View last recorded plan")
+            print("  /menu    - Return to main TUI menu")
+            print("  /exit    - Exit Skiff")
+            continue
+        if low == "/plan":
+            path = os.path.join(CONFIG_DIR, "last_plan.json")
+            if os.path.isfile(path):
+                f = open(path, "r")
+                try:
+                    data = json.load(f)
+                    print(C_GREEN + "Last recorded plan:" + C_RESET)
+                    for idx, step in enumerate(data.get("steps", [])):
+                        print("  %d. %s" % (idx + 1, step))
+                finally:
+                    f.close()
+            else:
+                print(C_DIM + "No plan recorded yet." + C_RESET)
+            continue
+
         if not task.strip():
             continue
         turn += 1
@@ -1263,7 +1467,8 @@ def run_tui():
         choice = choice.strip()
         if not choice:
             continue
-        if choice not in valid_keys and choice.lower() not in ("p",):
+        valid_keys_upper = set(k.upper() for k in valid_keys)
+        if choice.upper() not in valid_keys_upper:
             print_error("Invalid choice '%s' - pick one of: %s" % (choice, ", ".join(sorted(valid_keys))))
             prompt_input(" Press Enter to continue... ")
             continue

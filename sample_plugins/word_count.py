@@ -10,6 +10,7 @@ def run(args):
             content = f.read()
         finally:
             f.close()
-        return {"ok": True, "words": len(content.split()), "lines": content.count("\n") + 1}
+        lines = len(content.splitlines()) if content else 0
+        return {"ok": True, "words": len(content.split()), "lines": lines}
     except Exception as e:
         return {"ok": False, "error": str(e)}
