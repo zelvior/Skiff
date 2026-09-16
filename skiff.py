@@ -62,6 +62,16 @@ ANSI = _supports_ansi()
 UNICODE_BOX = ANSI  # old cmd.exe (cp437/cp1252) mangles box-drawing chars
 
 
+def strip_ansi(text):
+    if not text:
+        return ""
+    return re.sub(r"\x1b\[[0-9;]*[mG]", "", text)
+
+
+def visible_len(text):
+    return len(strip_ansi(text))
+
+
 def clr(code):
     return ("\x1b[%sm" % code) if ANSI else ""
 
@@ -100,7 +110,10 @@ C_MAGENTA = clr("35")
 C_BLUE = clr("34")
 C_WHITE_BOLD = clr("1;37")
 
-BOX = {"tl": "+", "tr": "+", "bl": "+", "br": "+", "h": "-", "v": "|", "lt": "+", "rt": "+"}
+if ANSI:
+    BOX = {"tl": "╭", "tr": "╮", "bl": "╰", "br": "╯", "h": "─", "v": "│", "lt": "├", "rt": "┤"}
+else:
+    BOX = {"tl": "+", "tr": "+", "bl": "+", "br": "+", "h": "-", "v": "|", "lt": "+", "rt": "+"}
 
 
 def clear_screen():
@@ -140,9 +153,18 @@ def box_bottom(width):
 
 def box_line(text, width=None, color="", center=False):
     w = (width or safe_width()) - 4
-    if len(text) > w:
-        text = text[:w - 3] + "..."
-    inner = text.center(w) if center else text.ljust(w)
+    vlen = visible_len(text)
+    if vlen > w:
+        raw = strip_ansi(text)
+        text = raw[:w - 3] + "..."
+        vlen = len(text)
+    pad = w - vlen
+    if center:
+        left_pad = pad // 2
+        right_pad = pad - left_pad
+        inner = (" " * left_pad) + text + (" " * right_pad)
+    else:
+        inner = text + (" " * pad)
     print("%s %s%s%s %s" % (BOX["v"], color, inner, C_RESET if color else "", BOX["v"]))
 
 
@@ -201,29 +223,34 @@ def print_status(cfg):
 
 
 def print_tool(name, args):
-    print(C_BLUE + C_BOLD + " [tool]   " + C_RESET + C_BLUE + name + C_RESET + " " +
+    icon = "⚡" if ANSI else "[tool]"
+    print(" " + C_CYAN + C_BOLD + icon + " " + name + C_RESET + " " +
           C_DIM + json.dumps(args)[:200] + C_RESET)
 
 
 def print_result(result):
     ok = result.get("ok", True) if isinstance(result, dict) else True
-    tag = (C_GREEN + " [ok]     " + C_RESET) if ok else (C_RED + " [failed] " + C_RESET)
+    icon = ("✓" if ANSI else "[ok]") if ok else ("✗" if ANSI else "[failed]")
+    tag = (C_GREEN + "   " + icon + " " + C_RESET) if ok else (C_RED + "   " + icon + " " + C_RESET)
     body = json.dumps(result)
     if len(body) > 800:
         body = body[:800] + "...(truncated)"
-    print(tag + body)
+    print(tag + C_DIM + body + C_RESET)
 
 
 def print_agent(msg):
-    print(C_MAGENTA + C_BOLD + " [skiff]  " + C_RESET + msg)
+    icon = "⏺" if ANSI else "[skiff]"
+    print(" " + C_MAGENTA + C_BOLD + icon + " " + C_RESET + msg)
 
 
 def print_error(msg):
-    print(C_RED + C_BOLD + " [error]  " + C_RESET + C_RED + msg + C_RESET)
+    icon = "✗" if ANSI else "[error]"
+    print(" " + C_RED + C_BOLD + icon + " " + C_RESET + C_RED + msg + C_RESET)
 
 
 def print_working(label="thinking"):
-    print(C_DIM + " ...%s..." % label + C_RESET)
+    icon = "◐" if ANSI else "..."
+    print(C_DIM + " %s %s..." % (icon, label) + C_RESET)
 
 
 def prompt_input(label):
@@ -1114,21 +1141,25 @@ def append_session_history(session_id, messages):
     save_history(hist)
 
 
-def run_agent(cfg, task, auto_confirm=True, max_turns=25):
-    system_prompt = SYSTEM_PROMPT_BASE
-    if TOOLS_EXTRA_DOC:
-        system_prompt += "\n\nAdditional plugin tools available:\n" + TOOLS_EXTRA_DOC
-    ambient = load_ambient_context(".")
-    if ambient:
-        system_prompt += "\n\nProject context found on disk (from CLAUDE.md / .cursorrules / copilot / opencode / AGENTS.md):\n" + ambient
-    extra = cfg.get("system_prompt_extra", "")
-    if extra:
-        system_prompt += "\n\nUser custom instructions:\n" + extra
+def run_agent(cfg, task, auto_confirm=True, max_turns=25, messages=None):
+    if messages is None:
+        system_prompt = SYSTEM_PROMPT_BASE
+        if TOOLS_EXTRA_DOC:
+            system_prompt += "\n\nAdditional plugin tools available:\n" + TOOLS_EXTRA_DOC
+        ambient = load_ambient_context(".")
+        if ambient:
+            system_prompt += "\n\nProject context found on disk (from CLAUDE.md / .cursorrules / copilot / opencode / AGENTS.md):\n" + ambient
+        extra = cfg.get("system_prompt_extra", "")
+        if extra:
+            system_prompt += "\n\nUser custom instructions:\n" + extra
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": task}
-    ]
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": task}
+        ]
+    else:
+        messages.append({"role": "user", "content": task})
+
     session_id = new_session_id()
     for turn in range(max_turns):
         print_working("thinking (turn %d/%d)" % (turn + 1, max_turns))
@@ -1407,9 +1438,9 @@ def tui_chat_session(cfg):
     print_status(cfg)
     print(" Type your task in plain English.")
     print(C_DIM + " Slash commands: /clear, /history, /config, /help, /plan, /menu, /exit" + C_RESET + "\n")
-    turn = 0
+    messages = None
     while True:
-        task = prompt_input(" you> ")
+        task = prompt_input(" > ")
         if task is None:
             return "exit"
         low = task.strip().lower()
@@ -1421,6 +1452,7 @@ def tui_chat_session(cfg):
             clear_screen()
             print_banner("Chat session")
             print_status(cfg)
+            messages = None
             continue
         if low == "/history":
             cmd_history()
@@ -1430,7 +1462,7 @@ def tui_chat_session(cfg):
             continue
         if low == "/help":
             print(C_CYAN + "Available slash commands:" + C_RESET)
-            print("  /clear   - Clear terminal screen")
+            print("  /clear   - Clear terminal screen and reset conversation history")
             print("  /history - View session history")
             print("  /config  - View active configuration")
             print("  /plan    - View last recorded plan")
@@ -1454,9 +1486,8 @@ def tui_chat_session(cfg):
 
         if not task.strip():
             continue
-        turn += 1
         hr()
-        run_agent(cfg, task)
+        run_agent(cfg, task, messages=messages)
         hr()
 
 
