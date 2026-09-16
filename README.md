@@ -1,181 +1,219 @@
-# Skiff
+```
+  ___| |  | (_) __ _|  _|
+ \___ \| |/ /| |/ _` | |_
+  ___) |   < | | (_| |  _|
+ |____/|_|\_\|_|\__,_|_|
+```
 
-**A BYOK AI coding agent CLI, built to run everywhere — from Windows XP 32-bit to Windows 11 64-bit, and on Linux and macOS — as a single dependency-free Python file.**
+# Skiff - BYOK AI Coding Agent CLI
+
+**A high-performance BYOK AI coding agent CLI built to run everywhere — from Windows XP 32-bit to Windows 11 64-bit, as well as Linux and macOS — as a single dependency-free Python file.**
 
 Version 1.0.0
 
 ---
 
-## Table of contents
-1. [Philosophy](#philosophy)
-2. [Features](#features)
-3. [Installation](#installation)
-4. [Quick start](#quick-start)
-5. [Command-line reference](#command-line-reference)
-6. [The TUI](#the-tui)
-7. [Providers (BYOK)](#providers-byok)
-8. [Agent tools](#agent-tools)
-9. [Extensibility](#extensibility)
-10. [Configuration & data files](#configuration--data-files)
-11. [Safety model](#safety-model)
-12. [Known scope boundaries](#known-scope-boundaries)
+## Table of Contents
+1. [Philosophy & Architecture](#philosophy--architecture)
+2. [Platform & OS Compatibility Matrix](#platform--os-compatibility-matrix)
+3. [Features Overview](#features-overview)
+4. [Installation & Requirements](#installation--requirements)
+5. [Quick Start](#quick-start)
+6. [Command-Line Interface (CLI) Reference](#command-line-interface-cli-reference)
+7. [The Terminal UI (TUI) & Slash Commands](#the-terminal-ui-tui--slash-commands)
+8. [Providers & BYOK Management](#providers--byok-management)
+9. [Complete Tool Specifications](#complete-tool-specifications)
+10. [Ambient Context & Plugin System](#ambient-context--plugin-system)
+11. [Configuration & Safety Model](#configuration--safety-model)
+12. [Testing & Quality Assurance](#testing--quality-assurance)
 
 ---
 
-## Philosophy
+## Philosophy & Architecture
 
-Skiff exists to work identically everywhere, with nothing to install beyond a Python interpreter:
+Skiff was created to deliver an autonomous AI coding experience across all desktop operating systems without installation friction or heavy package manager overhead:
 
-- **Stdlib-only.** No `pip install`, no third-party packages, no build step, ever. Every feature is implemented with what ships in the Python standard library.
-- **No `curses`.** Curses isn't reliably available on stock Windows, so the TUI is hand-rolled with `input()`, `print()`, and `os.system("cls"/"clear")`.
-- **ANSI color, only when it's real.** Skiff detects terminal capability at startup and only emits ANSI escape codes on terminals that support them (Windows 10+/Windows Terminal, or any Unix shell). Older Windows consoles (XP, 7, 8, early 10) get clean, uncorrupted plain text automatically.
-- **One file, two Python generations.** The same `skiff.py` runs unmodified on Python 2.7 and Python 3.x.
-- **Every feature must degrade gracefully on the oldest supported target before it ships.** That's the bar for anything added to this project.
+- **100% Stdlib-Only:** Zero external Python dependencies (`pip install` free). Uses standard library modules (`urllib`, `ssl`, `json`, `ast`, `subprocess`, `hashlib`, `fnmatch`).
+- **Python 2.7 to 3.x Compatibility:** Polyglot syntax supported on legacy Python 2.7 (Windows XP) through modern Python 3.12+ (Windows 11 / modern Unix).
+- **ANSI Terminal Awareness:** Automatically queries terminal capability (e.g. Windows 10 build 10586+ VT mode or POSIX shell). Enables ANSI colors and borders on supporting terminals while cleanly degrading to plain text on older consoles (cp437 / cp1252 on Win XP/7/8).
+- **Self-Healing Loop:** Automatically captures build and test execution output. On failure, the agent reads errors, patches the code, and re-runs up to 3 times automatically.
+- **Data Preservation:** Every file write, patch, or deletion triggers a snapshot backup into `~/.skiff/backups/`.
 
-## Features
+---
 
-| Category | What it does |
-|---|---|
-| BYOK API manager | Bring your own key for OpenAI-compatible APIs, Anthropic, OpenRouter, Groq, Ollama, or fully offline local GGUF models. Key auto-requested on first use; overridable per-run via the `SKIFF_API_KEY` environment variable. |
-| Terminal UI | Menu-driven, breadcrumbed, color-coded plain-text TUI; falls back cleanly on non-ANSI terminals. |
-| Shell execution engine | Runs POSIX or Win32 shell commands natively via `subprocess`, no shell-specific code paths to maintain. |
-| File system abstraction | Cross-platform read / write / append / list / delete / mkdir / surgical patch, all path-normalized per OS. |
-| Automatic backups | Every overwrite or delete of a file is snapshotted to `~/.skiff/backups` first — file operations are reversible. |
-| AST code indexer | Parses Python files into functions / classes / imports using the stdlib `ast` module. |
-| Repository mapper | Full directory tree + per-file AST index in one call, respecting a `.skiffignore` file (glob patterns, one per line). |
-| Git integration | `git diff` / `git status` surfaced as agent tools. |
-| Self-healing test loop | The agent can run a test command, read failures, patch the offending file, and re-run — looping until green or capped. |
-| Multi-step planning | The agent records an explicit step list (`plan`) before executing non-trivial tasks. |
-| Token usage & cost monitor | Tracks cumulative input/output tokens and estimates USD cost per session, persisted across runs. |
-| MCP client | Calls JSON-RPC-based MCP servers configured in `~/.skiff/mcp.json`. |
-| Session history & replay | Every session is persisted (last 50) and replayable in full from the TUI. |
-| Custom system instructions | User-supplied text appended to the agent's system prompt, editable from the TUI. |
-| Ambient project context | Auto-reads `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`, `opencode.json`, and `AGENTS.md` from the working directory into context, so Skiff respects instructions already written for other AI coding tools. |
-| Plugin tools | Drop a `.py` file into `~/.skiff/plugins/` to register a new agent-callable tool with no core edits. |
-| Config export/import | Share or restore configuration (API key always redacted on export) as portable JSON. |
-| HTTP resilience | Automatic retry with exponential backoff on transient provider errors (429/500/502/503/504). |
+## Platform & OS Compatibility Matrix
 
-## Installation
+| OS / Platform | Architecture | Python Versions | ANSI Support | Status |
+|---|---|---|---|---|
+| Windows XP / Vista / 7 / 8 | 32-bit / 64-bit | 2.7.x - 3.4.x | Plain Text Fallback | Fully Supported |
+| Windows 10 / 11 / Windows Terminal | 32-bit / 64-bit / ARM64 | 3.6 - 3.12+ | Full ANSI Color & Boxes | Fully Supported |
+| Linux (Ubuntu, Debian, Fedora, Arch, RHEL) | x86, x86_64, ARM64 | 2.7.x / 3.x | Full ANSI Color & Boxes | Fully Supported |
+| macOS (Intel & Apple Silicon) | x86_64, arm64 | 2.7.x / 3.x | Full ANSI Color & Boxes | Fully Supported |
 
-Requires only Python (2.7+ or any 3.x) on the target machine — nothing else.
+---
+
+## Features Overview
+
+- **Multi-Provider BYOK Engine:** Native integrations for OpenAI, Anthropic Claude, OpenRouter, Groq, local Ollama servers, and offline local GGUF execution via the `ollama` CLI.
+- **TUI & Status Bar:** Header displays active AI provider, model, API key state, current working directory, and active git branch.
+- **Interactive Slash Commands:** `/clear`, `/history`, `/config`, `/help`, `/plan`, `/menu`, and `/exit` available during interactive chat.
+- **17 Built-In Agent Tools:** `read_file`, `write_file`, `append_file`, `patch_file`, `list_dir`, `file_info`, `search_files`, `delete_path`, `make_dir`, `run_command`, `index_code`, `map_repo`, `git_diff`, `git_status`, `run_tests`, `mcp_call`, `plan`.
+- **Extensible Plugin Architecture:** Auto-loads custom Python tool definitions placed in `~/.skiff/plugins/*.py`.
+- **Ambient Project Awareness:** Auto-reads instructions from `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`, `opencode.json`, and `AGENTS.md`.
+
+---
+
+## Installation & Requirements
+
+No installation or package manager required.
+
+**Prerequisites:** Python 2.7 or Python 3.x installed on system PATH.
 
 ```bash
-# Any OS
+# Clone or download repository
+git clone https://github.com/zelvior/Skiff.git
+cd Skiff
+
+# Run directly
 python skiff.py
 ```
 
-On Windows, `skiff.bat` is provided as a double-clickable launcher.
+On Windows environments, `skiff.bat` is included as a double-clickable launcher.
 
-## Quick start
+---
+
+## Quick Start
 
 ```bash
-python skiff.py              # opens the TUI menu
-python skiff.py chat         # interactive agent chat
-python skiff.py run "create a hello.py that prints hi"
+python skiff.py               # Launch menu TUI
+python skiff.py chat          # Launch interactive chat session
+python skiff.py run "task"    # Execute a single task and exit
 ```
 
-The first time you chat or run a task, Skiff asks for your API key once (BYOK) and remembers it — no separate setup step is required, though `skiff setup` (or TUI option **3**) lets you change it anytime.
+---
 
-## Command-line reference
+## Command-Line Interface (CLI) Reference
 
-| Command | Description |
-|---|---|
-| `skiff` | Launch the TUI menu (default with no arguments) |
-| `skiff setup` | Configure provider, API key, model |
-| `skiff chat` | Interactive agent chat session |
-| `skiff run "<task>"` | Run a single agent task and exit |
-| `skiff config` | Show current config (API key masked) |
-| `skiff config export <file>` | Export config (API key redacted) to JSON |
-| `skiff config import <file>` | Import config from a JSON file |
-| `skiff usage` | Show cumulative token usage & estimated cost |
-| `skiff history` | List the most recent sessions |
-| `skiff --version` | Print the current version |
-| `skiff <anything else>` | Treated as a task and run directly — no subcommand required |
-
-Environment: `SKIFF_API_KEY`, if set, overrides the saved key for that invocation only.
-
-## The TUI
-
-Running `skiff` with no arguments opens a numbered, breadcrumbed menu:
-
-```
-[1] Chat with Skiff (agent session)
-[2] Run a single task
-[3] Setup / change API key & model
-[4] Show config
-[5] Help
-[6] Token usage & cost monitor
-[7] Custom system instructions
-[8] Session history / replay
-[9] MCP servers
-[P] Plugins
-[0] Exit
-```
-
-Every screen shows a breadcrumb, validates input, and returns cleanly on Ctrl+C. Tool calls, results, and errors are color-coded when the terminal supports ANSI, and rendered as plain, aligned text when it doesn't.
-
-## Providers (BYOK)
-
-| Provider | Requires a key | Notes |
+| Command | Arguments | Description |
 |---|---|---|
-| OpenAI | Yes | Default `gpt-4o-mini` |
-| Anthropic | Yes | Default `claude-sonnet-4-6` |
-| OpenRouter | Yes | Any OpenRouter-hosted model |
-| Groq | Yes | Default `llama-3.3-70b-versatile` |
-| Ollama | No | Talks to a local Ollama server over HTTP |
-| Local GGUF | No | Fully offline/air-gapped; shells out to the `ollama` CLI directly |
-| Custom | Depends | Any OpenAI-compatible chat completions endpoint |
+| `skiff` | None | Launches the interactive TUI menu |
+| `skiff setup` | None | Runs the interactive provider & API key wizard |
+| `skiff chat` | None | Starts an interactive agent chat session |
+| `skiff run` | `"<task>"` | Runs a specific agent task and exits |
+| `skiff config` | None | Displays active configuration with API key masked |
+| `skiff config export` | `<file.json>` | Exports configuration to JSON with API key redacted |
+| `skiff config import` | `<file.json>` | Imports configuration settings from JSON |
+| `skiff usage` | None | Shows cumulative token usage and estimated USD cost |
+| `skiff history` | None | Lists previous agent sessions |
+| `skiff --version` | None | Prints version information |
+| `skiff <task>` | `<anything>` | Fallback: treats unrecognized CLI input directly as a task |
 
-## Agent tools
+---
 
-The agent chooses from these on every turn:
+## The Terminal UI (TUI) & Slash Commands
 
-```
-read_file, write_file, append_file, patch_file, list_dir, delete_path,
-make_dir, run_command, index_code, map_repo, git_diff, git_status,
-run_tests, mcp_call, plan, final_answer
-```
+### TUI Menu Options
+- **`[1]` Chat with Skiff:** Starts an interactive chat session.
+- **`[2]` Run a single task:** Prompt for a single task execution.
+- **`[3]` Setup / change API key & model:** Re-run provider wizard.
+- **`[4]` Show config:** Inspect settings.
+- **`[5]` Help:** View built-in guidance.
+- **`[6]` Token usage & cost monitor:** View session token counters and USD cost.
+- **`[7]` Custom system instructions:** Define persistent extra agent instructions.
+- **`[8]` Session history / replay:** Replay past transcripts.
+- **`[9]` MCP servers:** Manage JSON-RPC Model Context Protocol servers.
+- **`[P]` Plugins:** View loaded user plugins from `~/.skiff/plugins/`.
+- **`[0]` Exit:** Quit Skiff.
 
-Plus any tools registered via the plugin system (see below).
+### Interactive Slash Commands
+While in interactive chat mode (`skiff chat` or Option 1), the following slash commands are available:
+- `/clear` - Clears the terminal screen and redraws status header.
+- `/history` - Lists recent session transcripts.
+- `/config` - Prints active configuration.
+- `/plan` - Displays the agent's last recorded multi-step execution plan.
+- `/help` - Displays available slash commands.
+- `/menu` - Returns to the main TUI menu.
+- `/exit` - Exits Skiff.
 
-## Extensibility
+---
 
-Two ways to add capability without touching `skiff.py`:
+## Providers & BYOK Management
 
-**Ambient project context** — place any of `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`, `opencode.json`, or `AGENTS.md` in your project root, and Skiff folds it into the agent's system prompt automatically on every run in that directory.
+Skiff does not bundle proprietary API keys. You bring your own key (BYOK):
 
-**Plugin tools** — drop a `.py` file into `~/.skiff/plugins/` defining:
+| Provider | Default Model | Base Endpoint / Execution | Key Required |
+|---|---|---|---|
+| OpenAI | `gpt-4o-mini` | `https://api.openai.com/v1/chat/completions` | Yes |
+| Anthropic | `claude-sonnet-4-6` | `https://api.anthropic.com/v1/messages` | Yes |
+| OpenRouter | `openai/gpt-4o-mini` | `https://openrouter.ai/api/v1/chat/completions` | Yes |
+| Groq | `llama-3.3-70b-versatile` | `https://api.groq.com/openai/v1/chat/completions` | Yes |
+| Ollama | `llama3.1` | `http://localhost:11434/v1/chat/completions` | No |
+| Local GGUF | `llama3.1` | Subprocess execution via `ollama run <model>` | No |
+| Custom | User Defined | User Defined OpenAI-compatible endpoint | Optional |
 
+---
+
+## Complete Tool Specifications
+
+1. `read_file(path)`: Reads full text content from target file path.
+2. `write_file(path, content)`: Overwrites target file path (creates backup first).
+3. `append_file(path, content)`: Appends text content to file.
+4. `patch_file(path, old_str, new_str)`: Surgically replaces exact substring matching in target file.
+5. `list_dir(path)`: Lists directory contents with sizes and folder indicators.
+6. `file_info(path)`: Retrieves detailed file metadata (size, mode/permissions, modification time).
+7. `search_files(path, pattern)`: Executes regex search across non-ignored files in target folder.
+8. `delete_path(path)`: Deletes file or directory recursively (creates backup for files).
+9. `make_dir(path)`: Recursively creates directory path.
+10. `run_command(cmd)`: Shells out to execute system command, returning stdout/stderr and returncode.
+11. `index_code(path)`: Parses Python AST to extract functions, classes, and import statements.
+12. `map_repo(path)`: Generates repository file tree and AST summary respecting `.skiffignore`.
+13. `git_diff()`: Executes `git diff` for repository.
+14. `git_status()`: Executes `git status --porcelain`.
+15. `run_tests(cmd)`: Runs test suite command and captures output for self-healing loops.
+16. `mcp_call(server, method, params)`: Dispatches JSON-RPC call to configured MCP server.
+17. `plan(steps)`: Saves structured multi-step plan array before execution.
+
+---
+
+## Ambient Context & Plugin System
+
+### Ambient Context
+Skiff automatically inspects the current directory and merges instructions into system prompt from:
+- `CLAUDE.md`
+- `.cursorrules`
+- `.github/copilot-instructions.md`
+- `opencode.json`
+- `AGENTS.md`
+
+### Plugins
+Drop any Python file into `~/.skiff/plugins/name.py` defining:
 ```python
-TOOL_NAME = "my_tool"
-TOOL_DESC = "One-line description"
+TOOL_NAME = "custom_tool"
+TOOL_DESC = "Tool description"
 
 def run(args):
-    return {"ok": True, "result": "..."}
+    return {"ok": True, "result": "output"}
 ```
+It instantly registers as a callable agent tool.
 
-It becomes a callable agent tool on next launch. A working example ships at `sample_plugins/word_count.py`. TUI option **P** lists everything currently loaded.
+---
 
-## Configuration & data files
+## Configuration & Safety Model
 
-All state lives under `~/.skiff/`:
+All configuration and operational data persist under `~/.skiff/`:
+- `config.json`: Persistent settings, token usage, USD cost tally.
+- `history.json`: Stores last 50 session transcripts.
+- `mcp.json`: MCP server endpoints.
+- `backups/`: Reversible file backups generated prior to modification.
+- `plugins/`: User-defined python tool plugins.
 
-| Path | Contents |
-|---|---|
-| `config.json` | Provider, model, API key, token/cost totals, custom system prompt |
-| `history.json` | Last 50 sessions, full transcripts |
-| `mcp.json` | Configured MCP servers |
-| `plugins/` | User-added tool plugins |
-| `backups/` | Automatic pre-overwrite/delete file snapshots |
-| `last_plan.json` | Most recent agent-recorded plan |
+---
 
-## Safety model
+## Testing & Quality Assurance
 
-- Every `write_file`, `patch_file`, and `delete_path` call snapshots the previous file version to `~/.skiff/backups` first.
-- API keys are never written to export files.
-- The agent operates with the permissions of the user running Skiff — it has no sandboxing beyond your OS's own file/user permissions. Treat it the same way you'd treat any tool with shell access.
+Skiff includes a unit test suite verifying core mechanics:
 
-## Known scope boundaries
-
-- **Native compiled binary (Rust/Go/C):** not implemented, and not planned as a bolt-on. A genuine native build is a separate rewrite of the whole engine in a different language and toolchain — it would be a distinct future project, not a feature added to this file.
-- **Local GGUF inference:** Skiff doesn't embed an inference engine. Offline execution works by shelling out to an installed `ollama` binary; without it, offline mode has nothing to call.
+```bash
+python3 test_skiff.py
+```
+Tests cover JSON extraction, backup creation, AST indexing, file manipulation, TUI inputs, and plugin execution.

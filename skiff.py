@@ -122,12 +122,21 @@ def box_line(text, width=None, color="", center=False):
     print("%s %s%s%s %s" % (BOX["v"], color, inner, C_RESET if color else "", BOX["v"]))
 
 
+ASCII_LOGO = [
+    r"  ___| |  | (_) __ _|  _|",
+    r" \___ \| |/ /| |/ _` | |_ ",
+    r"  ___) |   < | | (_| |  _|",
+    r" |____/|_|\_\|_|\__,_|_|  "
+]
+
+
 def print_banner(breadcrumb=""):
     w = safe_width(60)
     clear_screen()
     print(C_CYAN + C_BOLD)
     box_top(w)
-    box_line("S K I F F", w, center=True)
+    for line in ASCII_LOGO:
+        box_line(line, w, center=True)
     box_line("BYOK AI Coding Agent", w, center=True)
     box_bottom(w)
     print(C_RESET)
