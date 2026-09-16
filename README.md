@@ -59,7 +59,7 @@ Skiff was created to deliver an autonomous AI coding experience across all deskt
 - **Multi-Provider BYOK Engine:** Native integrations for OpenAI, Anthropic Claude, OpenRouter, Groq, local Ollama servers, and offline local GGUF execution via the `ollama` CLI.
 - **TUI & Status Bar:** Header displays active AI provider, model, API key state, current working directory, and active git branch.
 - **Interactive Slash Commands:** `/clear`, `/history`, `/config`, `/help`, `/plan`, `/menu`, and `/exit` available during interactive chat.
-- **17 Built-In Agent Tools:** `read_file`, `write_file`, `append_file`, `patch_file`, `list_dir`, `file_info`, `search_files`, `delete_path`, `make_dir`, `run_command`, `index_code`, `map_repo`, `git_diff`, `git_status`, `run_tests`, `mcp_call`, `plan`.
+- **21 Built-In Agent Tools:** `read_file`, `write_file`, `append_file`, `patch_file`, `list_dir`, `find_files`, `file_info`, `search_files`, `delete_path`, `make_dir`, `run_command`, `index_code`, `map_repo`, `git_diff`, `git_status`, `git_commit`, `git_log`, `platform_info`, `run_tests`, `mcp_call`, `plan`.
 - **Extensible Plugin Architecture:** Auto-loads custom Python tool definitions placed in `~/.skiff/plugins/*.py`.
 - **Ambient Project Awareness:** Auto-reads instructions from `CLAUDE.md`, `.cursorrules`, `.github/copilot-instructions.md`, `opencode.json`, and `AGENTS.md`.
 
@@ -162,18 +162,22 @@ Skiff does not bundle proprietary API keys. You bring your own key (BYOK):
 3. `append_file(path, content)`: Appends text content to file.
 4. `patch_file(path, old_str, new_str)`: Surgically replaces exact substring matching in target file.
 5. `list_dir(path)`: Lists directory contents with sizes and folder indicators.
-6. `file_info(path)`: Retrieves detailed file metadata (size, mode/permissions, modification time).
-7. `search_files(path, pattern)`: Executes regex search across non-ignored files in target folder.
-8. `delete_path(path)`: Deletes file or directory recursively (creates backup for files).
-9. `make_dir(path)`: Recursively creates directory path.
-10. `run_command(cmd)`: Shells out to execute system command, returning stdout/stderr and returncode.
-11. `index_code(path)`: Parses Python AST to extract functions, classes, and import statements.
-12. `map_repo(path)`: Generates repository file tree and AST summary respecting `.skiffignore`.
-13. `git_diff()`: Executes `git diff` for repository.
-14. `git_status()`: Executes `git status --porcelain`.
-15. `run_tests(cmd)`: Runs test suite command and captures output for self-healing loops.
-16. `mcp_call(server, method, params)`: Dispatches JSON-RPC call to configured MCP server.
-17. `plan(steps)`: Saves structured multi-step plan array before execution.
+6. `find_files(path, glob_pattern)`: Finds files matching wildcard pattern across directory hierarchy.
+7. `file_info(path)`: Retrieves detailed file metadata (size, mode/permissions, modification time).
+8. `search_files(path, pattern)`: Executes regex search across non-ignored files in target folder.
+9. `delete_path(path)`: Deletes file or directory recursively (creates backup for files).
+10. `make_dir(path)`: Recursively creates directory path.
+11. `run_command(cmd)`: Shells out to execute system command, returning stdout/stderr and returncode.
+12. `index_code(path)`: Parses Python AST to extract functions, classes, and import statements.
+13. `map_repo(path)`: Generates repository file tree and AST summary respecting `.skiffignore`.
+14. `git_diff()`: Executes `git diff` for repository.
+15. `git_status()`: Executes `git status --porcelain`.
+16. `git_commit(message)`: Stages all changes (`git add -A`) and commits with message.
+17. `git_log(max_count)`: Views recent git commit history.
+18. `platform_info()`: Diagnostics for OS, Python version, ANSI capabilities, and working folder.
+19. `run_tests(cmd)`: Runs test suite command and captures output for self-healing loops.
+20. `mcp_call(server, method, params)`: Dispatches JSON-RPC call to configured MCP server.
+21. `plan(steps)`: Saves structured multi-step plan array before execution.
 
 ---
 

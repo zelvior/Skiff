@@ -94,6 +94,21 @@ class TestSkiff(unittest.TestCase):
         self.assertEqual(search_res["match_count"], 1)
         self.assertEqual(search_res["matches"][0]["line"], 2)
 
+    def test_new_agent_tools(self):
+        # find_files
+        test_file = os.path.join(self.temp_dir, "find_target.py")
+        with open(test_file, "w") as f:
+            f.write("pass\n")
+        find_res = skiff.tool_find_files({"path": self.temp_dir, "glob_pattern": "*.py"})
+        self.assertTrue(find_res["ok"])
+        self.assertGreaterEqual(find_res["match_count"], 1)
+
+        # platform_info
+        plat_res = skiff.tool_platform_info({})
+        self.assertTrue(plat_res["ok"])
+        self.assertIn("python_version", plat_res)
+        self.assertIn("os", plat_res)
+
     def test_config_load_save(self):
         cfg = skiff.load_config()
         self.assertEqual(cfg["provider"], "openai")

@@ -271,9 +271,9 @@ COST_TABLE = {
 
 SYSTEM_PROMPT_BASE = (
     "You are Skiff, an autonomous AI coding agent running in a local CLI. "
-    "You have tools to read/write/list/delete files, inspect file metadata, search files, "
-    "execute shell commands, inspect code structure, map repositories, run git diffs, run tests, "
-    "and call MCP tools if configured. Use tools by responding with a single JSON "
+    "You have tools to read/write/list/delete files, inspect file metadata, search files, find files, "
+    "execute shell commands, inspect code structure, map repositories, run git commands (diff/status/commit/log), "
+    "get platform info, run tests, and call MCP tools if configured. Use tools by responding with a single JSON "
     "object and nothing else, in this exact format:\n"
     '{"tool": "<tool_name>", "args": {...}}\n'
     "Available tools:\n"
@@ -282,6 +282,7 @@ SYSTEM_PROMPT_BASE = (
     "  append_file(path, content)\n"
     "  patch_file(path, old_str, new_str)  - exact-match replace, for surgical edits\n"
     "  list_dir(path)\n"
+    "  find_files(path, glob_pattern)  - find files matching wildcard pattern\n"
     "  file_info(path)  - detailed metadata: size, permissions, modified time\n"
     "  search_files(path, pattern)  - regex code search across files in a path\n"
     "  delete_path(path)\n"
@@ -291,6 +292,9 @@ SYSTEM_PROMPT_BASE = (
     "  map_repo(path)  - directory tree + per-file code index, for repo-wide context\n"
     "  git_diff()  - current working tree diff\n"
     "  git_status()\n"
+    "  git_commit(message)  - stage and commit current changes with message\n"
+    "  git_log(max_count)  - view recent git commits\n"
+    "  platform_info()  - OS, Python version, environment diagnostics\n"
     "  run_tests(cmd)  - run a test command, capture output for self-healing loops\n"
     "  mcp_call(server, method, params)  - call a configured MCP server\n"
     "  plan(steps)  - record a multi-step plan (list of strings) before executing\n"
@@ -835,6 +839,59 @@ def tool_git_status(args):
     return tool_run_command({"cmd": "git status --porcelain"})
 
 
+def tool_git_commit(args):
+    msg = args.get("message", "Commit by Skiff AI agent")
+    res_add = tool_run_command({"cmd": "git add -A"})
+    if not res_add.get("ok"):
+        return res_add
+    # Escape quotes cleanly for cross-platform execution
+    safe_msg = msg.replace('"', '\\"')
+    return tool_run_command({"cmd": 'git commit -m "%s"' % safe_msg})
+
+
+def tool_git_log(args):
+    max_count = int(args.get("max_count", 10))
+    return tool_run_command({"cmd": "git log -n %d --oneline" % max_count})
+
+
+def tool_find_files(args):
+    import fnmatch
+    root = _safe_path(args.get("path", "."))
+    pattern = args.get("glob_pattern", "*")
+    if not os.path.isdir(root):
+        return {"ok": False, "error": "Not a directory: %s" % root}
+    patterns = _load_skiffignore(root)
+    matched = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in IGNORE_DIRS]
+        rel = os.path.relpath(dirpath, root)
+        for fn in filenames:
+            relfull = os.path.normpath(os.path.join(rel, fn))
+            if _is_ignored(relfull, patterns):
+                continue
+            if fnmatch.fnmatch(fn, pattern) or fnmatch.fnmatch(relfull, pattern):
+                matched.append(relfull)
+            if len(matched) >= 1000:
+                break
+        if len(matched) >= 1000:
+            break
+    return {"ok": True, "match_count": len(matched), "files": matched}
+
+
+def tool_platform_info(args):
+    import platform
+    ver = sys.getwindowsversion() if hasattr(sys, "getwindowsversion") else None
+    return {
+        "ok": True,
+        "os": sys.platform,
+        "python_version": sys.version,
+        "is_win": IS_WIN,
+        "windows_version": str(ver) if ver else None,
+        "ansi_supported": ANSI,
+        "cwd": os.getcwd()
+    }
+
+
 def tool_run_tests(args):
     cmd = args.get("cmd", "")
     if not cmd:
@@ -890,6 +947,7 @@ TOOLS = {
     "append_file": tool_append_file,
     "patch_file": tool_patch_file,
     "list_dir": tool_list_dir,
+    "find_files": tool_find_files,
     "file_info": tool_file_info,
     "search_files": tool_search_files,
     "delete_path": tool_delete_path,
@@ -899,6 +957,9 @@ TOOLS = {
     "map_repo": tool_map_repo,
     "git_diff": tool_git_diff,
     "git_status": tool_git_status,
+    "git_commit": tool_git_commit,
+    "git_log": tool_git_log,
+    "platform_info": tool_platform_info,
     "run_tests": tool_run_tests,
     "mcp_call": tool_mcp_call,
     "plan": tool_plan
