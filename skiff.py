@@ -66,6 +66,29 @@ def clr(code):
     return ("\x1b[%sm" % code) if ANSI else ""
 
 
+def rgb_fg(r, g, b):
+    return ("\x1b[38;2;%d;%d;%dm" % (r, g, b)) if ANSI else ""
+
+
+def apply_gradient(text, start_rgb=(0, 220, 255), end_rgb=(230, 80, 255)):
+    if not ANSI or not text:
+        return text
+    n = len(text)
+    if n <= 1:
+        return rgb_fg(*start_rgb) + text + clr("0")
+    out = []
+    r1, g1, b1 = start_rgb
+    r2, g2, b2 = end_rgb
+    for i, ch in enumerate(text):
+        t = float(i) / float(n - 1)
+        r = int(r1 + (r2 - r1) * t)
+        g = int(g1 + (g2 - g1) * t)
+        b = int(b1 + (b2 - b1) * t)
+        out.append(rgb_fg(r, g, b) + ch)
+    out.append(clr("0"))
+    return "".join(out)
+
+
 C_RESET = clr("0")
 C_BOLD = clr("1")
 C_CYAN = clr("36")
@@ -136,15 +159,17 @@ ASCII_LOGO = [
 def print_banner(breadcrumb=""):
     w = safe_width(60)
     clear_screen()
-    print(C_CYAN + C_BOLD)
-    box_top(w)
+    top_line = BOX["tl"] + BOX["h"] * (w - 2) + BOX["tr"]
+    bot_line = BOX["bl"] + BOX["h"] * (w - 2) + BOX["br"]
+    print(apply_gradient(top_line, (0, 200, 255), (180, 80, 255)))
     for line in ASCII_LOGO:
-        box_line(line, w, center=True)
-    box_line("BYOK AI Coding Agent", w, center=True)
-    box_bottom(w)
-    print(C_RESET)
+        grad_logo = apply_gradient(line, (0, 230, 255), (255, 100, 220))
+        box_line(grad_logo, w, center=True)
+    sub = apply_gradient("BYOK AI Coding Agent", (0, 255, 200), (200, 120, 255))
+    box_line(sub, w, center=True)
+    print(apply_gradient(bot_line, (0, 200, 255), (180, 80, 255)))
     if breadcrumb:
-        print(C_DIM + "  > " + breadcrumb + C_RESET)
+        print(C_DIM + "  > " + apply_gradient(breadcrumb, (0, 220, 255), (255, 150, 200)) + C_RESET)
         hr(w)
 
 
